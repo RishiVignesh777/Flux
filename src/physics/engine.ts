@@ -346,9 +346,11 @@ export class PhysicsEngine {
     }
 
     // 18. Check Exit Door
-    if (!player.isDead) {
+    if (!player.isDead && !player.reachedExit) {
       if (PhysicsEngine.checkAABB(player, level.exitDoor)) {
         player.reachedExit = true;
+        player.vx *= 0.2;
+        player.vy *= 0.2;
         onSound?.('win');
       }
     }

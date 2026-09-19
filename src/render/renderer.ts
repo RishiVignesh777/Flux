@@ -4,6 +4,7 @@ import {
   PhysicsState,
   GravityDirection,
   GameSettings,
+  Rect,
 } from '../types/game';
 import { PlayerEntity, PhysicsEngine } from '../physics/engine';
 
@@ -17,6 +18,72 @@ export class GameRenderer {
   public triggerScreenShake(magnitude = 6, duration = 0.25) {
     this.shakeMagnitude = magnitude;
     this.shakeTime = duration;
+  }
+
+  public triggerLevelCompleteBurst(door: Rect, settings: GameSettings) {
+    if (settings.particleDensity === 'OFF') return;
+
+    const cx = door.x + door.w / 2;
+    const cy = door.y + door.h / 2;
+
+    // 1. Expanding shockwave ring at exit portal
+    this.addParticle({
+      x: cx,
+      y: cy,
+      vx: 0,
+      vy: 0,
+      life: 0,
+      maxLife: 0.6,
+      size: 16,
+      color: '#38bdf8',
+      shape: 'ring',
+      glow: true,
+    }, settings);
+
+    // Inner bright core ring
+    this.addParticle({
+      x: cx,
+      y: cy,
+      vx: 0,
+      vy: 0,
+      life: 0,
+      maxLife: 0.4,
+      size: 8,
+      color: '#ffffff',
+      shape: 'ring',
+      glow: true,
+    }, settings);
+
+    // 2. High-speed radiant sparkles & geometric motes
+    const particleCount = settings.particleDensity === 'REDUCED' ? 16 : 32;
+    const colors = ['#38bdf8', '#60a5fa', '#93c5fd', '#fde047', '#ffffff', '#c084fc'];
+    const shapes: Array<'circle' | 'square' | 'sparkle'> = ['circle', 'sparkle', 'square'];
+
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (i / particleCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.45;
+      const speed = Math.random() * 110 + 40; // 40 to 150 px/s
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      const shape = shapes[Math.floor(Math.random() * shapes.length)];
+      const maxLife = Math.random() * 0.4 + 0.65; // 0.65s to 1.05s
+      const size = Math.random() * 2.2 + 2.0;
+
+      // Gentle upward buoyancy for celebratory feel
+      const vyBias = -22 * Math.random();
+
+      this.addParticle({
+        x: cx + (Math.random() - 0.5) * 6,
+        y: cy + (Math.random() - 0.5) * 8,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed + vyBias,
+        life: 0,
+        maxLife,
+        size,
+        color,
+        shape,
+        friction: 0.92,
+        glow: true,
+      }, settings);
+    }
   }
 
   public addParticle(p: Particle, settings: GameSettings) {
@@ -873,6 +940,12 @@ export class GameRenderer {
         continue;
       }
 
+      if (p.friction) {
+        const factor = Math.pow(p.friction, dt * 60);
+        p.vx *= factor;
+        p.vy *= factor;
+      }
+
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
@@ -882,16 +955,29 @@ export class GameRenderer {
       ctx.fillStyle = p.color;
       ctx.strokeStyle = p.color;
 
+      if (p.glow) {
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8;
+      }
+
       if (p.shape === 'circle') {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
       } else if (p.shape === 'square') {
         ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      } else if (p.shape === 'sparkle') {
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y - p.size);
+        ctx.lineTo(p.x + p.size * 0.55, p.y);
+        ctx.lineTo(p.x, p.y + p.size);
+        ctx.lineTo(p.x - p.size * 0.55, p.y);
+        ctx.closePath();
+        ctx.fill();
       } else if (p.shape === 'ring') {
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * (1 + (p.life / p.maxLife) * 0.5), 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.size * (1 + (p.life / p.maxLife) * 0.7), 0, Math.PI * 2);
         ctx.stroke();
       } else if (p.shape === 'frost') {
         ctx.lineWidth = 1;

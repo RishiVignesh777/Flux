@@ -202,7 +202,9 @@ export interface Particle {
   maxLife: number;
   size: number;
   color: string;
-  shape: 'circle' | 'square' | 'line' | 'frost' | 'ring';
+  shape: 'circle' | 'square' | 'line' | 'frost' | 'ring' | 'sparkle';
+  friction?: number;
+  glow?: boolean;
 }
 
 export interface GameSettings {

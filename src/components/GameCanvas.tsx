@@ -79,12 +79,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   // Timers
   const gravityShiftTimerRef = useRef(0);
   const deathResetTimerRef = useRef<number | null>(null);
+  const winTimeoutRef = useRef<number | null>(null);
 
   // Initialize & reset level
   const resetLevel = useCallback((incDeaths = false) => {
     if (deathResetTimerRef.current) {
       clearTimeout(deathResetTimerRef.current);
       deathResetTimerRef.current = null;
+    }
+    if (winTimeoutRef.current) {
+      clearTimeout(winTimeoutRef.current);
+      winTimeoutRef.current = null;
     }
 
     const freshLevel: LevelData = JSON.parse(JSON.stringify(levelData));
@@ -332,10 +337,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           }
 
           // Handle Level Win
-          if (player.reachedExit && !isCompleted) {
-            setIsCompleted(true);
+          if (player.reachedExit && !isCompleted && !winTimeoutRef.current) {
+            // Trigger subtle level complete particle burst effect at the exit door location
+            rendererRef.current.triggerLevelCompleteBurst(activeLevel.exitDoor, settings);
+
             const collectedShards = activeLevel.shards.filter(s => s.collected).length;
             onLevelCompleted(timeSeconds, deaths, switches, collectedShards);
+
+            // Allow the particle burst to blossom at the exit door before displaying completion modal
+            winTimeoutRef.current = window.setTimeout(() => {
+              setIsCompleted(true);
+              winTimeoutRef.current = null;
+            }, 400);
           }
 
           accumulator -= fixedDt;
@@ -368,6 +381,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       cancelAnimationFrame(animId);
       if (deathResetTimerRef.current) {
         clearTimeout(deathResetTimerRef.current);
+      }
+      if (winTimeoutRef.current) {
+        clearTimeout(winTimeoutRef.current);
       }
     };
   }, [
