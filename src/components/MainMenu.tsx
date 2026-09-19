@@ -1,7 +1,7 @@
 import React from 'react';
 import { GameScreen } from '../types/game';
 import { SavedGameData } from '../storage/saveSystem';
-import { Play, Grid, Flame, Clock, Infinity, Calendar, Edit3, Settings, Sparkles } from 'lucide-react';
+import { Play, Grid, Flame, Clock, Infinity, Calendar, Edit3, Settings, Sparkles, Monitor } from 'lucide-react';
 
 interface MainMenuProps {
   saveData: SavedGameData;
@@ -148,6 +148,19 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             LEVEL EDITOR
           </span>
           <span className="text-[10px] text-slate-500">CREATE</span>
+        </button>
+
+        {/* Target Platform & Godot 4 */}
+        <button
+          id="menu-btn-godot"
+          onClick={() => onNavigate('PLATFORM_GODOT')}
+          className="flex items-center justify-between rounded-xl border border-sky-500/30 bg-sky-950/50 px-5 py-3 font-semibold text-sky-300 hover:border-sky-400 hover:bg-sky-900/50 hover:text-white transition active:scale-[0.98]"
+        >
+          <span className="flex items-center gap-2.5">
+            <Monitor className="w-4 h-4 text-sky-400" />
+            GODOT 4 PC SPEC
+          </span>
+          <span className="text-[10px] text-emerald-400 font-mono font-bold">SECTION 29</span>
         </button>
 
         {/* Settings */}

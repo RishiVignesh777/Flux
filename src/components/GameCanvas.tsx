@@ -6,6 +6,7 @@ import { soundManager } from '../audio/soundManager';
 import { HUD } from './HUD';
 import { LevelCompleteModal } from './LevelCompleteModal';
 import { PauseMenu } from './PauseMenu';
+import { GodotPlatformModal } from './GodotPlatformModal';
 
 interface GameCanvasProps {
   levelData: LevelData;
@@ -75,6 +76,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     right: false,
     jump: false,
   });
+
+  const prevGamepadButtonsRef = useRef<boolean[]>([]);
+  const [controllerType, setControllerType] = useState<'KEYBOARD' | 'XBOX' | 'PLAYSTATION'>('KEYBOARD');
+  const [showPlatformModal, setShowPlatformModal] = useState<boolean>(false);
 
   // Timers
   const gravityShiftTimerRef = useRef(0);
@@ -255,26 +260,51 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const gp = gamepads[0];
     if (!gp) return;
 
+    // Recognize Xbox vs PlayStation
+    const id = (gp.id || '').toLowerCase();
+    if (id.includes('playstation') || id.includes('ps4') || id.includes('ps5') || id.includes('dualshock') || id.includes('dualsense')) {
+      if (controllerType !== 'PLAYSTATION') setControllerType('PLAYSTATION');
+    } else {
+      if (controllerType !== 'XBOX') setControllerType('XBOX');
+    }
+
     // Movement: Left stick or D-pad
     const stickX = gp.axes[0];
     const dpadLeft = gp.buttons[14]?.pressed;
     const dpadRight = gp.buttons[15]?.pressed;
 
-    inputRef.current.left = stickX < -0.3 || dpadLeft;
-    inputRef.current.right = stickX > 0.3 || dpadRight;
+    inputRef.current.left = stickX < -0.25 || dpadLeft;
+    inputRef.current.right = stickX > 0.25 || dpadRight;
 
     // Jump: Button 0 (A / Cross)
     if (!challenge?.noJump) {
       inputRef.current.jump = Boolean(gp.buttons[0]?.pressed);
     }
 
-    // State switches: Shoulder buttons / bumpers
-    if (gp.buttons[4]?.pressed) handleSwitchState('HEAVY');
-    if (gp.buttons[5]?.pressed) handleSwitchState('LIGHT');
-    if (gp.buttons[6]?.pressed) handleSwitchState('MAGNETIC');
-    if (gp.buttons[7]?.pressed) handleSwitchState('ELASTIC');
-    if (gp.buttons[9]?.pressed) setIsPaused(p => !p); // Start button = pause
-  }, [challenge, handleSwitchState]);
+    const prev = prevGamepadButtonsRef.current;
+    const justPressed = (btnIndex: number) => {
+      const isPressed = Boolean(gp.buttons[btnIndex]?.pressed);
+      const wasPressed = Boolean(prev[btnIndex]);
+      return isPressed && !wasPressed;
+    };
+
+    // State switches (Edge-triggered so player switches cleanly once per tap)
+    if (justPressed(4)) handleSwitchState('HEAVY'); // LB / L1
+    if (justPressed(5)) handleSwitchState('LIGHT'); // RB / R1
+    if (justPressed(2)) handleSwitchState('MAGNETIC'); // X / Square
+    if (justPressed(1)) handleSwitchState('ELASTIC'); // B / Circle
+    if (justPressed(6)) handleSwitchState('FROZEN'); // LT / L2
+    if (justPressed(7)) handleSwitchState('PHASE'); // RT / R2
+
+    // Restart: Button 3 (Y / Triangle)
+    if (justPressed(3)) resetLevel(true);
+
+    // Pause: Button 9 (Start / Menu / Options)
+    if (justPressed(9)) setIsPaused(p => !p);
+
+    // Store button state for edge detection
+    prevGamepadButtonsRef.current = gp.buttons.map(b => Boolean(b.pressed));
+  }, [challenge, handleSwitchState, resetLevel, controllerType]);
 
   // Fixed Timestep Game Loop
   useEffect(() => {
@@ -451,7 +481,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             inputRef.current.right = active;
           }}
           isTouchDevice={isTouchDevice}
+          controllerType={controllerType}
+          onOpenPlatformModal={() => setShowPlatformModal(true)}
         />
+      )}
+
+      {/* Target Platform & Godot 4 Modal */}
+      {showPlatformModal && (
+        <GodotPlatformModal onClose={() => setShowPlatformModal(false)} />
       )}
 
       {/* Pause Menu Modal */}

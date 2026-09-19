@@ -27,6 +27,8 @@ interface HUDProps {
   onMoveLeft?: (active: boolean) => void;
   onMoveRight?: (active: boolean) => void;
   isTouchDevice?: boolean;
+  controllerType?: 'KEYBOARD' | 'XBOX' | 'PLAYSTATION';
+  onOpenPlatformModal?: () => void;
 }
 
 const STATE_CONFIG: Record<
@@ -110,9 +112,36 @@ export const HUD: React.FC<HUDProps> = ({
   onMoveLeft,
   onMoveRight,
   isTouchDevice,
-}) => {
+  controllerType = 'KEYBOARD',
+  onOpenPlatformModal,
+}: HUDProps) => {
   const currentStateConfig = STATE_CONFIG[player.state] || STATE_CONFIG.NORMAL;
   const statesList: PhysicsState[] = ['HEAVY', 'LIGHT', 'MAGNETIC', 'ELASTIC', 'FROZEN', 'PHASE'];
+
+  const getGlyph = (st: PhysicsState, defaultKey: string) => {
+    if (controllerType === 'XBOX') {
+      switch (st) {
+        case 'HEAVY': return 'LB';
+        case 'LIGHT': return 'RB';
+        case 'MAGNETIC': return 'X';
+        case 'ELASTIC': return 'B';
+        case 'FROZEN': return 'LT';
+        case 'PHASE': return 'RT';
+        default: return 'A';
+      }
+    } else if (controllerType === 'PLAYSTATION') {
+      switch (st) {
+        case 'HEAVY': return 'L1';
+        case 'LIGHT': return 'R1';
+        case 'MAGNETIC': return '□';
+        case 'ELASTIC': return '○';
+        case 'FROZEN': return 'L2';
+        case 'PHASE': return 'R2';
+        default: return '✕';
+      }
+    }
+    return defaultKey;
+  };
 
   const collectedCount = level.shards.filter(s => s.collected).length;
 
@@ -161,10 +190,21 @@ export const HUD: React.FC<HUDProps> = ({
           </div>
 
           {/* Restart & Pause Buttons */}
+          {onOpenPlatformModal && (
+            <button
+              id="hud-btn-platform"
+              onClick={onOpenPlatformModal}
+              title="Target Platform & Godot 4 Spec (Section 29)"
+              className="pointer-events-auto flex h-9 items-center gap-1.5 px-2.5 rounded-lg border border-sky-500/30 bg-sky-950/70 text-sky-300 hover:border-sky-400 hover:text-white transition active:scale-95 font-mono text-[11px]"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              {controllerType === 'XBOX' ? '🎮 XBOX' : controllerType === 'PLAYSTATION' ? '🎮 PS5' : 'PC 60FPS'}
+            </button>
+          )}
           <button
             id="hud-btn-restart"
             onClick={onRestart}
-            title="Restart Level (R)"
+            title={`Restart Level (${controllerType === 'XBOX' ? 'Y' : controllerType === 'PLAYSTATION' ? '△' : 'R'})`}
             className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-lg border border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-600 hover:text-white transition active:scale-95"
           >
             <RotateCcw className="w-4 h-4" />
@@ -172,7 +212,7 @@ export const HUD: React.FC<HUDProps> = ({
           <button
             id="hud-btn-pause"
             onClick={onPause}
-            title="Pause (ESC)"
+            title={`Pause (${controllerType === 'XBOX' ? 'Menu' : controllerType === 'PLAYSTATION' ? 'Options' : 'ESC'})`}
             className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-lg border border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-600 hover:text-white transition active:scale-95"
           >
             <Pause className="w-4 h-4" />
@@ -242,8 +282,8 @@ export const HUD: React.FC<HUDProps> = ({
                   {cfg.icon}
                 </span>
                 <span className="hidden sm:inline">{cfg.label}</span>
-                <kbd className="hidden md:inline rounded bg-slate-800/80 px-1 py-0.2 text-[9px] font-mono text-slate-400">
-                  {cfg.key}
+                <kbd className="hidden md:inline rounded bg-slate-800/80 px-1.5 py-0.5 text-[10px] font-mono font-bold text-slate-300 border border-slate-700">
+                  {getGlyph(st, cfg.key)}
                 </kbd>
               </button>
             );

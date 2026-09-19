@@ -239,7 +239,8 @@ export type GameScreen =
   | 'DAILY'
   | 'CHALLENGE'
   | 'EDITOR'
-  | 'SETTINGS';
+  | 'SETTINGS'
+  | 'PLATFORM_GODOT';
 
 export interface ChallengeModifier {
   id: string;

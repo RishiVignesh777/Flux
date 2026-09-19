@@ -259,6 +259,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 ))}
               </div>
+
+              {/* Gamepad Target Controller Map */}
+              <div className="mt-4 pt-3 border-t border-slate-800">
+                <div className="text-[11px] font-mono font-bold text-sky-400 mb-1.5 flex items-center justify-between">
+                  <span>GAMEPAD CONTROLLER MAPPING (XBOX / PLAYSTATION)</span>
+                  <span className="text-[10px] text-slate-500">SECTION 29 SPEC</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px] font-mono text-slate-300">
+                  <div className="p-1.5 rounded bg-slate-950/80 border border-slate-800">Jump: <span className="text-sky-300 font-bold">[A / ✕]</span></div>
+                  <div className="p-1.5 rounded bg-slate-950/80 border border-slate-800">Restart: <span className="text-sky-300 font-bold">[Y / △]</span></div>
+                  <div className="p-1.5 rounded bg-slate-950/80 border border-slate-800">Pause: <span className="text-sky-300 font-bold">[Start / Opt]</span></div>
+                  <div className="p-1.5 rounded bg-slate-950/80 border border-slate-800">Heavy: <span className="text-sky-300 font-bold">[LB / L1]</span></div>
+                  <div className="p-1.5 rounded bg-slate-950/80 border border-slate-800">Light: <span className="text-sky-300 font-bold">[RB / R1]</span></div>
+                  <div className="p-1.5 rounded bg-slate-950/80 border border-slate-800">Magnetic: <span className="text-sky-300 font-bold">[X / □]</span></div>
+                  <div className="p-1.5 rounded bg-slate-950/80 border border-slate-800">Elastic: <span className="text-sky-300 font-bold">[B / ○]</span></div>
+                  <div className="p-1.5 rounded bg-slate-950/80 border border-slate-800">Frozen/Phase: <span className="text-sky-300 font-bold">[LT / RT]</span></div>
+                </div>
+              </div>
             </div>
           )}
         </div>

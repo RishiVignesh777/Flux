@@ -1,0 +1,51 @@
+[gd_scene load_steps=5 format=3 uid="uid://d9x1n8k4f6g3r"]
+
+[ext_resource type="PackedScene" uid="uid://b7vyk8n2f6g1p" path="res://scenes/player.tscn" id="1_ply"]
+[ext_resource type="PackedScene" uid="uid://c8wym7k3f5g2q" path="res://scenes/hud.tscn" id="2_hud"]
+
+[sub_resource type="GDScript" id="GDScript_main"]
+script/source = "extends Node2D
+
+@onready var player: PlayerController = $Player
+@onready var hud: UISystem = $UISystem
+@onready var level_container: Node2D = $LevelContainer
+
+func _ready() -> void:
+	load_chamber(1)
+
+func load_chamber(id: int) -> void:
+	if LevelManager:
+		var data = LevelManager.load_level(id)
+		player.global_position = data.get(\"player_spawn\", Vector2(100, 480))
+		_build_chamber_geometry(data)
+
+func _build_chamber_geometry(data: Dictionary) -> void:
+	for child in level_container.get_children():
+		child.queue_free()
+
+	for b in data.get(\"blocks\", []):
+		var body = StaticBody2D.new()
+		var col = CollisionShape2D.new()
+		var rect_shape = RectangleShape2D.new()
+		rect_shape.size = Vector2(b[\"w\"], b[\"h\"])
+		col.shape = rect_shape
+		col.position = Vector2(b[\"w\"] / 2.0, b[\"h\"] / 2.0)
+		body.position = Vector2(b[\"x\"], b[\"y\"])
+		body.add_child(col)
+
+		var vis = ColorRect.new()
+		vis.size = Vector2(b[\"w\"], b[\"h\"])
+		vis.color = Color(\"#1e293b\")
+		body.add_child(vis)
+		level_container.add_child(body)
+"
+
+[node name="Main" type="Node2D"]
+script = SubResource("GDScript_main")
+
+[node name="LevelContainer" type="Node2D" parent="."]
+
+[node name="Player" parent="." instance=ExtResource("1_ply")]
+position = Vector2(120, 480)
+
+[node name="UISystem" parent="." instance=ExtResource("2_hud")]

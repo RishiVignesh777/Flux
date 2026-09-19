@@ -10,6 +10,7 @@ import { ChallengeSelect } from './components/ChallengeSelect';
 import { LevelEditor } from './components/LevelEditor';
 import { SettingsModal } from './components/SettingsModal';
 import { GameCanvas } from './components/GameCanvas';
+import { GodotPlatformModal } from './components/GodotPlatformModal';
 
 export default function App() {
   const [screen, setScreen] = useState<GameScreen>('MENU');
@@ -160,6 +161,10 @@ export default function App() {
             setScreen('PLAY');
           }}
         />
+      )}
+
+      {screen === 'PLATFORM_GODOT' && (
+        <GodotPlatformModal onClose={() => setScreen('MENU')} />
       )}
 
       {screen === 'PLAY' && (
