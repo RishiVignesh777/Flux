@@ -1,0 +1,6 @@
+{
+  "name": "FLUX",
+  "description": "A 2D physics puzzle-platformer where you dynamically shift states—Heavy, Light, Magnetic, Elastic, Frozen, and Phase—to solve compact puzzle rooms.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
