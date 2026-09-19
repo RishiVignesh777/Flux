@@ -24,6 +24,8 @@ export interface PlayerEntity {
   squashY: number;
   facing: 1 | -1;
   phaseTimer?: number;
+  coyoteTimer?: number;
+  jumpBufferTimer?: number;
   isDead: boolean;
   reachedExit: boolean;
 }
@@ -69,7 +71,7 @@ export class PhysicsEngine {
     dt: number,
     player: PlayerEntity,
     level: LevelData,
-    input: { left: boolean; right: boolean; jump: boolean },
+    input: { left: boolean; right: boolean; jump: boolean; up?: boolean; down?: boolean },
     onSound?: (soundType: string, extra?: unknown) => void
   ) {
     if (player.isDead || player.reachedExit) return;
@@ -85,6 +87,19 @@ export class PhysicsEngine {
     player.squashX += (1.0 - player.squashX) * Math.min(1, dt * 15);
     player.squashY += (1.0 - player.squashY) * Math.min(1, dt * 15);
 
+    // Update Coyote time & Jump buffer
+    if (player.isGrounded) {
+      player.coyoteTimer = 0.12;
+    } else if (player.coyoteTimer && player.coyoteTimer > 0) {
+      player.coyoteTimer -= dt;
+    }
+
+    if (input.jump) {
+      player.jumpBufferTimer = 0.10;
+    } else if (player.jumpBufferTimer && player.jumpBufferTimer > 0) {
+      player.jumpBufferTimer -= dt;
+    }
+
     // 2. Update Timed Switches
     for (const sw of level.timedSwitches) {
       if (sw.isActivated) {
@@ -96,7 +111,7 @@ export class PhysicsEngine {
       }
     }
 
-    // 3. Update Moving Platforms
+    // 3. Update Moving Platforms (Drift-free with player/block velocity carry)
     for (const plat of level.platforms) {
       if (plat.moving) {
         // If frozen player is touching this platform, it pauses!
@@ -109,33 +124,88 @@ export class PhysicsEngine {
         }
 
         if (!frozenPause) {
-          const offset = (plat.moving.initialOffset || 0) + (plat.moving.speed * dt);
-          plat.moving.initialOffset = offset;
-          const cycle = Math.sin(offset);
-          if (plat.moving.axis === 'x') {
-            const newX = plat.x + Math.cos(offset) * plat.moving.distance * dt * plat.moving.speed;
-            plat.x = newX;
+          const m = plat.moving as unknown as {
+            axis: 'x' | 'y';
+            distance: number;
+            speed: number;
+            initialOffset?: number;
+            baseX?: number;
+            baseY?: number;
+          };
+
+          if (m.baseX === undefined || m.baseY === undefined) {
+            m.baseX = plat.x;
+            m.baseY = plat.y;
+          }
+
+          const offset = (m.initialOffset || 0) + m.speed * dt;
+          m.initialOffset = offset;
+          const oldX = plat.x;
+          const oldY = plat.y;
+
+          if (m.axis === 'x') {
+            plat.x = (m.baseX ?? plat.x) + Math.sin(offset) * m.distance;
           } else {
-            const newY = plat.y + Math.cos(offset) * plat.moving.distance * dt * plat.moving.speed;
-            plat.y = newY;
+            plat.y = (m.baseY ?? plat.y) + Math.sin(offset) * m.distance;
+          }
+
+          const dx = plat.x - oldX;
+          const dy = plat.y - oldY;
+
+          // Carry player if standing on top or magnetically attached
+          const playerOnPlat =
+            player.x + player.w > plat.x &&
+            player.x < plat.x + plat.w &&
+            Math.abs(player.y + player.h - oldY) <= 5;
+
+          const playerAttached =
+            player.attachedToMagnet &&
+            PhysicsEngine.checkAABB(player, { x: plat.x - 2, y: plat.y - 2, w: plat.w + 4, h: plat.h + 4 });
+
+          if (playerOnPlat || playerAttached) {
+            player.x += dx;
+            player.y += dy;
+          }
+
+          // Carry pushable blocks on platform
+          for (const block of level.blocks) {
+            if (
+              block.x + block.w > plat.x &&
+              block.x < plat.x + plat.w &&
+              Math.abs(block.y + block.h - oldY) <= 5
+            ) {
+              block.x += dx;
+              block.y += dy;
+            }
           }
         }
       }
     }
 
-    // 4. Update Hazard Cycles
+    // 4. Update Hazard Cycles & Moving Hazards (Drift-free)
     for (const haz of level.hazards) {
       if (haz.cycle) {
         haz.cycle.offset = (haz.cycle.offset + dt) % haz.cycle.period;
       }
       if (haz.moving) {
-        const offset = ((haz as unknown as { _offset?: number })._offset || 0) + haz.moving.speed * dt;
-        (haz as unknown as { _offset?: number })._offset = offset;
-        const delta = Math.cos(offset) * haz.moving.distance * dt * haz.moving.speed;
-        if (haz.moving.axis === 'x') {
-          haz.x += delta;
+        const hm = haz.moving as unknown as {
+          axis: 'x' | 'y';
+          distance: number;
+          speed: number;
+          _offset?: number;
+          baseX?: number;
+          baseY?: number;
+        };
+        if (hm.baseX === undefined || hm.baseY === undefined) {
+          hm.baseX = haz.x;
+          hm.baseY = haz.y;
+        }
+        const offset = (hm._offset || 0) + hm.speed * dt;
+        hm._offset = offset;
+        if (hm.axis === 'x') {
+          haz.x = (hm.baseX ?? haz.x) + Math.sin(offset) * hm.distance;
         } else {
-          haz.y += delta;
+          haz.y = (hm.baseY ?? haz.y) + Math.sin(offset) * hm.distance;
         }
       }
     }
@@ -166,6 +236,12 @@ export class PhysicsEngine {
         player.x = tp.targetX;
         player.y = tp.targetY;
         tp.cooldown = 1.0;
+        // Also put any teleporters near destination on cooldown to prevent ping-pong loops
+        for (const otherTp of level.teleporters) {
+          if (Math.hypot(otherTp.x - tp.targetX, otherTp.y - tp.targetY) < 40) {
+            otherTp.cooldown = 1.0;
+          }
+        }
         onSound?.('phase');
       }
     }
@@ -192,7 +268,7 @@ export class PhysicsEngine {
     }
 
     // 9. Apply Gravity & Environmental Forces
-    let grav = this.getGravityVector();
+    const grav = this.getGravityVector();
     let gravMul = 1.0;
     if (isHeavy) gravMul = 1.9;
     if (isLight) gravMul = 0.35;
@@ -212,8 +288,7 @@ export class PhysicsEngine {
       }
     }
 
-    // 10. Horizontal / Directional Movement Controls
-    // Movement speed adjusts based on state
+    // 10. Directional Movement Controls
     let moveSpeed = 220;
     let accel = 1800;
     let friction = 1400;
@@ -236,7 +311,6 @@ export class PhysicsEngine {
       player.vx = 0;
       player.vy = 0;
     } else {
-      // Determine movement axis based on gravity
       const isVerticalGrav = this.gravityDir === 'DOWN' || this.gravityDir === 'UP';
 
       if (isVerticalGrav) {
@@ -266,8 +340,8 @@ export class PhysicsEngine {
       } else {
         // Horizontal gravity (LEFT or RIGHT) - Up/Down movement on walls
         let moveDir = 0;
-        if (input.left) moveDir -= 1;
-        if (input.right) moveDir += 1;
+        if (input.up || input.left) moveDir -= 1;
+        if (input.down || input.right) moveDir += 1;
 
         if (moveDir !== 0) {
           player.vy += moveDir * accel * dt;
@@ -283,8 +357,12 @@ export class PhysicsEngine {
         }
       }
 
-      // 11. Jump Handling
-      if (input.jump && (player.isGrounded || (isMagnetic && player.attachedToMagnet))) {
+      // 11. Jump Handling (with Jump Buffering & Coyote Time)
+      const canJump =
+        Boolean(player.jumpBufferTimer && player.jumpBufferTimer > 0) &&
+        (player.isGrounded || Boolean(player.coyoteTimer && player.coyoteTimer > 0) || (isMagnetic && player.attachedToMagnet));
+
+      if (canJump) {
         let jumpPower = 380;
         if (isHeavy) jumpPower = 270;
         if (isLight) jumpPower = 490;
@@ -302,9 +380,19 @@ export class PhysicsEngine {
 
         player.isGrounded = false;
         player.attachedToMagnet = false;
+        player.coyoteTimer = 0;
+        player.jumpBufferTimer = 0;
         player.squashX = 0.7;
         player.squashY = 1.35;
         onSound?.('jump', isLight);
+      }
+
+      // Variable Jump Cut (shorter hops when releasing jump key early)
+      if (!input.jump) {
+        if (this.gravityDir === 'DOWN' && player.vy < -60) player.vy *= 0.55;
+        else if (this.gravityDir === 'UP' && player.vy > 60) player.vy *= 0.55;
+        else if (this.gravityDir === 'LEFT' && player.vx > 60) player.vx *= 0.55;
+        else if (this.gravityDir === 'RIGHT' && player.vx < -60) player.vx *= 0.55;
       }
     }
 
@@ -325,6 +413,9 @@ export class PhysicsEngine {
     // Movement Y
     player.y += player.vy * dt;
     this.resolvePlayerCollisionsY(player, level, isPhase, isElastic, isMagnetic, onSound);
+
+    // Unstuck resolution (if phase state ended inside geometry or due to boundary push)
+    this.resolveUnstuck(player, level, isPhase);
 
     // 13. Magnetic Attraction to Nearby Metallic / Polar Objects
     if (isMagnetic) {
@@ -383,27 +474,53 @@ export class PhysicsEngine {
       if (plat.type === 'PHASE' && isPhase) continue;
 
       if (PhysicsEngine.checkAABB(player, plat)) {
+        // Seam tolerance: if vertical overlap is tiny (<= 3px), player is skimming a floor/ceiling seam!
+        const overlapY = Math.min(player.y + player.h, plat.y + plat.h) - Math.max(player.y, plat.y);
+        if (overlapY <= 3) continue;
+
         if (isMagnetic && (plat.type === 'MAGNETIC_POS' || plat.type === 'MAGNETIC_NEG')) {
           player.attachedToMagnet = true;
         }
 
         if (player.vx > 0) {
           player.x = plat.x - player.w;
+
+          // Under RIGHT gravity, this right wall is the ground!
+          if (this.gravityDir === 'RIGHT') {
+            player.isGrounded = true;
+            if (player.vx > 250) onSound?.('land', PhysicsEngine.hasState(player, 'HEAVY'));
+          }
+
           if (isElastic || plat.type === 'ELASTIC') {
-            player.vx = -player.vx * 0.85;
-            player.squashX = 0.7;
-            player.squashY = 1.3;
-            onSound?.('bounce', 1);
+            if (Math.abs(player.vx) >= 50) {
+              player.vx = -player.vx * 0.85;
+              player.squashX = 0.7;
+              player.squashY = 1.3;
+              onSound?.('bounce', 1);
+            } else {
+              player.vx = 0;
+            }
           } else {
             player.vx = 0;
           }
         } else if (player.vx < 0) {
           player.x = plat.x + plat.w;
+
+          // Under LEFT gravity, this left wall is the ground!
+          if (this.gravityDir === 'LEFT') {
+            player.isGrounded = true;
+            if (Math.abs(player.vx) > 250) onSound?.('land', PhysicsEngine.hasState(player, 'HEAVY'));
+          }
+
           if (isElastic || plat.type === 'ELASTIC') {
-            player.vx = -player.vx * 0.85;
-            player.squashX = 0.7;
-            player.squashY = 1.3;
-            onSound?.('bounce', 1);
+            if (Math.abs(player.vx) >= 50) {
+              player.vx = -player.vx * 0.85;
+              player.squashX = 0.7;
+              player.squashY = 1.3;
+              onSound?.('bounce', 1);
+            } else {
+              player.vx = 0;
+            }
           } else {
             player.vx = 0;
           }
@@ -414,11 +531,16 @@ export class PhysicsEngine {
     // Door collisions (closed doors act as solid walls)
     for (const door of level.doors) {
       if (!door.isOpen && PhysicsEngine.checkAABB(player, door)) {
+        const overlapY = Math.min(player.y + player.h, door.y + door.h) - Math.max(player.y, door.y);
+        if (overlapY <= 3) continue;
+
         if (player.vx > 0) {
           player.x = door.x - player.w;
+          if (this.gravityDir === 'RIGHT') player.isGrounded = true;
           player.vx = 0;
         } else if (player.vx < 0) {
           player.x = door.x + door.w;
+          if (this.gravityDir === 'LEFT') player.isGrounded = true;
           player.vx = 0;
         }
       }
@@ -438,7 +560,7 @@ export class PhysicsEngine {
 
       // One-way platform check: only collide when falling down through top edge
       if (plat.type === 'ONE_WAY') {
-        if (player.vy > 0 && player.y + player.h - player.vy * 0.05 <= plat.y + 4) {
+        if (player.vy > 0 && player.y + player.h - player.vy * 0.05 <= plat.y + 6) {
           if (PhysicsEngine.checkAABB(player, plat)) {
             player.y = plat.y - player.h;
             player.vy = 0;
@@ -449,20 +571,32 @@ export class PhysicsEngine {
       }
 
       if (PhysicsEngine.checkAABB(player, plat)) {
+        // Seam tolerance: if horizontal overlap is tiny (<= 3px), don't catch on wall vertical seam!
+        const overlapX = Math.min(player.x + player.w, plat.x + plat.w) - Math.max(player.x, plat.x);
+        if (overlapX <= 3) continue;
+
         if (isMagnetic && (plat.type === 'MAGNETIC_POS' || plat.type === 'MAGNETIC_NEG')) {
           player.attachedToMagnet = true;
         }
 
         if (player.vy > 0) {
           player.y = plat.y - player.h;
-          player.isGrounded = true;
+
+          // Under DOWN gravity, landing on platform top is ground!
+          if (this.gravityDir === 'DOWN') {
+            player.isGrounded = true;
+          }
 
           if (isElastic || plat.type === 'ELASTIC') {
-            const bounceForce = plat.type === 'ELASTIC' ? 1.25 : 0.85;
-            player.vy = -player.vy * bounceForce;
-            player.squashX = 1.4;
-            player.squashY = 0.6;
-            onSound?.('bounce', 1);
+            if (Math.abs(player.vy) >= 50) {
+              const bounceForce = plat.type === 'ELASTIC' ? 1.25 : 0.85;
+              player.vy = -player.vy * bounceForce;
+              player.squashX = 1.4;
+              player.squashY = 0.6;
+              onSound?.('bounce', 1);
+            } else {
+              player.vy = 0;
+            }
           } else {
             if (player.vy > 250) {
               onSound?.('land', PhysicsEngine.hasState(player, 'HEAVY'));
@@ -473,11 +607,24 @@ export class PhysicsEngine {
           }
         } else if (player.vy < 0) {
           player.y = plat.y + plat.h;
+
+          // Under UP gravity, landing on ceiling is ground!
+          if (this.gravityDir === 'UP') {
+            player.isGrounded = true;
+            if (Math.abs(player.vy) > 250) {
+              onSound?.('land', PhysicsEngine.hasState(player, 'HEAVY'));
+            }
+          }
+
           if (isElastic || plat.type === 'ELASTIC') {
-            player.vy = -player.vy * 0.85;
-            player.squashX = 1.3;
-            player.squashY = 0.7;
-            onSound?.('bounce', 1);
+            if (Math.abs(player.vy) >= 50) {
+              player.vy = -player.vy * 0.85;
+              player.squashX = 1.3;
+              player.squashY = 0.7;
+              onSound?.('bounce', 1);
+            } else {
+              player.vy = 0;
+            }
           } else {
             player.vy = 0;
           }
@@ -488,13 +635,46 @@ export class PhysicsEngine {
     // Door collisions
     for (const door of level.doors) {
       if (!door.isOpen && PhysicsEngine.checkAABB(player, door)) {
+        const overlapX = Math.min(player.x + player.w, door.x + door.w) - Math.max(player.x, door.x);
+        if (overlapX <= 3) continue;
+
         if (player.vy > 0) {
           player.y = door.y - player.h;
           player.vy = 0;
-          player.isGrounded = true;
+          if (this.gravityDir === 'DOWN') player.isGrounded = true;
         } else if (player.vy < 0) {
           player.y = door.y + door.h;
           player.vy = 0;
+          if (this.gravityDir === 'UP') player.isGrounded = true;
+        }
+      }
+    }
+  }
+
+  private resolveUnstuck(player: PlayerEntity, level: LevelData, isPhase: boolean) {
+    if (isPhase) return;
+    for (const plat of level.platforms) {
+      if (plat.type === 'ONE_WAY') continue;
+      if (plat.type === 'PHASE') continue;
+      if (PhysicsEngine.checkAABB(player, plat)) {
+        const leftPen = player.x + player.w - plat.x;
+        const rightPen = plat.x + plat.w - player.x;
+        const topPen = player.y + player.h - plat.y;
+        const bottomPen = plat.y + plat.h - player.y;
+        const minPen = Math.min(leftPen, rightPen, topPen, bottomPen);
+
+        if (minPen === topPen) {
+          player.y = plat.y - player.h;
+          if (this.gravityDir === 'DOWN') player.isGrounded = true;
+        } else if (minPen === bottomPen) {
+          player.y = plat.y + plat.h;
+          if (this.gravityDir === 'UP') player.isGrounded = true;
+        } else if (minPen === leftPen) {
+          player.x = plat.x - player.w;
+          if (this.gravityDir === 'RIGHT') player.isGrounded = true;
+        } else {
+          player.x = plat.x + plat.w;
+          if (this.gravityDir === 'LEFT') player.isGrounded = true;
         }
       }
     }
@@ -574,6 +754,17 @@ export class PhysicsEngine {
           }
         }
       }
+      for (const door of level.doors) {
+        if (!door.isOpen && PhysicsEngine.checkAABB(block, door)) {
+          if (block.vx > 0) {
+            block.x = door.x - block.w;
+            block.vx = 0;
+          } else if (block.vx < 0) {
+            block.x = door.x + door.w;
+            block.vx = 0;
+          }
+        }
+      }
 
       // Move block Y
       block.y += block.vy * dt;
@@ -601,19 +792,69 @@ export class PhysicsEngine {
           }
         }
       }
+      for (const door of level.doors) {
+        if (!door.isOpen && PhysicsEngine.checkAABB(block, door)) {
+          if (block.vy > 0) {
+            block.y = door.y - block.h;
+            block.vy = 0;
+            block.isGrounded = true;
+          } else if (block.vy < 0) {
+            block.y = door.y + door.h;
+            block.vy = 0;
+          }
+        }
+      }
 
       // Block-Player push interaction
       if (!isPhase && PhysicsEngine.checkAABB(player, block)) {
         const canPush = block.type !== 'HEAVY' || isHeavy;
 
         if (canPush) {
-          // Push horizontally
+          // Push horizontally - check if destination is obstructed before pushing into wall!
           if (player.vx > 0 && player.x < block.x) {
-            block.x = player.x + player.w;
-            block.vx = player.vx * (isHeavy ? 1.0 : 0.6);
+            const targetX = player.x + player.w;
+            const testRect = { x: targetX, y: block.y, w: block.w, h: block.h };
+            let blocked = false;
+            for (const plat of level.platforms) {
+              if (plat.type === 'ONE_WAY') continue;
+              if (PhysicsEngine.checkAABB(testRect, plat)) { blocked = true; break; }
+            }
+            for (const door of level.doors) {
+              if (!door.isOpen && PhysicsEngine.checkAABB(testRect, door)) { blocked = true; break; }
+            }
+            for (const otherBlock of level.blocks) {
+              if (otherBlock.id !== block.id && PhysicsEngine.checkAABB(testRect, otherBlock)) { blocked = true; break; }
+            }
+
+            if (!blocked) {
+              block.x = targetX;
+              block.vx = player.vx * (isHeavy ? 1.0 : 0.6);
+            } else {
+              player.x = block.x - player.w;
+              player.vx = 0;
+            }
           } else if (player.vx < 0 && player.x > block.x) {
-            block.x = player.x - block.w;
-            block.vx = player.vx * (isHeavy ? 1.0 : 0.6);
+            const targetX = player.x - block.w;
+            const testRect = { x: targetX, y: block.y, w: block.w, h: block.h };
+            let blocked = false;
+            for (const plat of level.platforms) {
+              if (plat.type === 'ONE_WAY') continue;
+              if (PhysicsEngine.checkAABB(testRect, plat)) { blocked = true; break; }
+            }
+            for (const door of level.doors) {
+              if (!door.isOpen && PhysicsEngine.checkAABB(testRect, door)) { blocked = true; break; }
+            }
+            for (const otherBlock of level.blocks) {
+              if (otherBlock.id !== block.id && PhysicsEngine.checkAABB(testRect, otherBlock)) { blocked = true; break; }
+            }
+
+            if (!blocked) {
+              block.x = targetX;
+              block.vx = player.vx * (isHeavy ? 1.0 : 0.6);
+            } else {
+              player.x = block.x + block.w;
+              player.vx = 0;
+            }
           }
 
           // Player standing on block
@@ -674,13 +915,16 @@ export class PhysicsEngine {
       }
     }
 
-    // Timed switches activated by player contact
+    // Timed switches activated/refreshed by player contact
     for (const sw of level.timedSwitches) {
       if (PhysicsEngine.checkAABB(player, sw)) {
         if (!sw.isActivated) {
           sw.isActivated = true;
           sw.timeLeft = sw.duration;
           onSound?.('plate', true);
+        } else {
+          // Re-trigger/refresh timer
+          sw.timeLeft = Math.max(sw.timeLeft, sw.duration * 0.95);
         }
       }
     }
@@ -729,7 +973,18 @@ export class PhysicsEngine {
         continue;
       }
 
-      if (PhysicsEngine.checkAABB(player, haz)) {
+      // For spikes, use a fair inset hitbox so grazing empty air around the tip doesn't kill
+      let hazBox: Rect = haz;
+      if (haz.type === 'SPIKE') {
+        hazBox = {
+          x: haz.x + 3,
+          y: haz.y + 3,
+          w: Math.max(4, haz.w - 6),
+          h: Math.max(4, haz.h - 6),
+        };
+      }
+
+      if (PhysicsEngine.checkAABB(player, hazBox)) {
         player.isDead = true;
         onSound?.('hazard');
         break;

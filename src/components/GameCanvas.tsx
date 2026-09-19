@@ -64,17 +64,28 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   // Trackers
   const [hudState, setHudState] = useState<PlayerEntity>(playerRef.current);
   const [timeSeconds, setTimeSeconds] = useState(0);
+  const timeSecondsRef = useRef(0);
   const [deaths, setDeaths] = useState(0);
+  const deathsRef = useRef(0);
   const [switches, setSwitches] = useState(0);
+  const switchesRef = useRef(0);
   const [isPaused, setIsPaused] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
   // Input states
-  const inputRef = useRef({
+  const inputRef = useRef<{
+    left: boolean;
+    right: boolean;
+    jump: boolean;
+    up: boolean;
+    down: boolean;
+  }>({
     left: false,
     right: false,
     jump: false,
+    up: false,
+    down: false,
   });
 
   const prevGamepadButtonsRef = useRef<boolean[]>([]);
@@ -85,6 +96,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const gravityShiftTimerRef = useRef(0);
   const deathResetTimerRef = useRef<number | null>(null);
   const winTimeoutRef = useRef<number | null>(null);
+
+  // Keep refs in sync
+  useEffect(() => {
+    deathsRef.current = deaths;
+  }, [deaths]);
+
+  useEffect(() => {
+    switchesRef.current = switches;
+  }, [switches]);
 
   // Initialize & reset level
   const resetLevel = useCallback((incDeaths = false) => {
@@ -128,14 +148,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     setIsCompleted(false);
 
     if (incDeaths) {
-      setDeaths(d => d + 1);
+      setDeaths(d => {
+        const next = d + 1;
+        deathsRef.current = next;
+        return next;
+      });
     }
   }, [levelData, challenge]);
 
   // When level prop changes, full reset
   useEffect(() => {
+    timeSecondsRef.current = 0;
     setTimeSeconds(0);
+    deathsRef.current = 0;
     setDeaths(0);
+    switchesRef.current = 0;
     setSwitches(0);
     resetLevel(false);
   }, [levelData, resetLevel]);
@@ -206,6 +233,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   }, [settings.screenShake]);
 
+  // Challenge and settings refs to keep game loop rock solid without tearing down RAF
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const challengeRef = useRef(challenge);
+  challengeRef.current = challenge;
+  const onLevelCompletedRef = useRef(onLevelCompleted);
+  onLevelCompletedRef.current = onLevelCompleted;
+
   // Keyboard Event Listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -223,10 +258,27 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         return;
       }
 
-      if (e.code === bindings.left) inputRef.current.left = true;
-      if (e.code === bindings.right) inputRef.current.right = true;
-      if (e.code === bindings.jump && !challenge?.noJump) {
-        inputRef.current.jump = true;
+      // Universal movement with WASD and Arrow key fallbacks
+      if (e.code === bindings.left || e.code === 'KeyA' || e.code === 'ArrowLeft') {
+        inputRef.current.left = true;
+        if (e.code === 'ArrowLeft') e.preventDefault();
+      }
+      if (e.code === bindings.right || e.code === 'KeyD' || e.code === 'ArrowRight') {
+        inputRef.current.right = true;
+        if (e.code === 'ArrowRight') e.preventDefault();
+      }
+      if (e.code === bindings.jump || e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp') {
+        if (!challenge?.noJump) {
+          inputRef.current.jump = true;
+        }
+        if (e.code === 'Space' || e.code === 'ArrowUp') e.preventDefault();
+      }
+      if (e.code === 'KeyW' || e.code === 'ArrowUp') {
+        inputRef.current.up = true;
+      }
+      if (e.code === 'KeyS' || e.code === 'ArrowDown') {
+        inputRef.current.down = true;
+        if (e.code === 'ArrowDown') e.preventDefault();
       }
 
       // State switches
@@ -240,16 +292,38 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     const handleKeyUp = (e: KeyboardEvent) => {
       const bindings = settings.keybindings;
-      if (e.code === bindings.left) inputRef.current.left = false;
-      if (e.code === bindings.right) inputRef.current.right = false;
-      if (e.code === bindings.jump) inputRef.current.jump = false;
+      if (e.code === bindings.left || e.code === 'KeyA' || e.code === 'ArrowLeft') {
+        inputRef.current.left = false;
+      }
+      if (e.code === bindings.right || e.code === 'KeyD' || e.code === 'ArrowRight') {
+        inputRef.current.right = false;
+      }
+      if (e.code === bindings.jump || e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp') {
+        inputRef.current.jump = false;
+      }
+      if (e.code === 'KeyW' || e.code === 'ArrowUp') {
+        inputRef.current.up = false;
+      }
+      if (e.code === 'KeyS' || e.code === 'ArrowDown') {
+        inputRef.current.down = false;
+      }
+    };
+
+    const handleBlur = () => {
+      inputRef.current.left = false;
+      inputRef.current.right = false;
+      inputRef.current.jump = false;
+      inputRef.current.up = false;
+      inputRef.current.down = false;
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, [settings.keybindings, handleSwitchState, resetLevel, challenge]);
 
@@ -270,14 +344,19 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Movement: Left stick or D-pad
     const stickX = gp.axes[0];
+    const stickY = gp.axes[1];
     const dpadLeft = gp.buttons[14]?.pressed;
     const dpadRight = gp.buttons[15]?.pressed;
+    const dpadUp = gp.buttons[12]?.pressed;
+    const dpadDown = gp.buttons[13]?.pressed;
 
-    inputRef.current.left = stickX < -0.25 || dpadLeft;
-    inputRef.current.right = stickX > 0.25 || dpadRight;
+    inputRef.current.left = stickX < -0.25 || Boolean(dpadLeft);
+    inputRef.current.right = stickX > 0.25 || Boolean(dpadRight);
+    inputRef.current.up = stickY < -0.3 || Boolean(dpadUp);
+    inputRef.current.down = stickY > 0.3 || Boolean(dpadDown);
 
     // Jump: Button 0 (A / Cross)
-    if (!challenge?.noJump) {
+    if (!challengeRef.current?.noJump) {
       inputRef.current.jump = Boolean(gp.buttons[0]?.pressed);
     }
 
@@ -304,12 +383,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Store button state for edge detection
     prevGamepadButtonsRef.current = gp.buttons.map(b => Boolean(b.pressed));
-  }, [challenge, handleSwitchState, resetLevel, controllerType]);
+  }, [handleSwitchState, resetLevel, controllerType]);
 
-  // Fixed Timestep Game Loop
+  // Fixed Timestep Game Loop (Continuous without re-subscription stutter)
   useEffect(() => {
     let animId: number;
     let lastTime = performance.now();
+    let lastHudUpdate = performance.now();
     const fixedDt = 1 / 60;
     let accumulator = 0;
 
@@ -319,7 +399,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       const rawDt = Math.min((currentTime - lastTime) / 1000, 0.1);
       lastTime = currentTime;
 
-      const dt = rawDt * settings.gameSpeed;
+      const currentSettings = settingsRef.current;
+      const currentChallenge = challengeRef.current;
+      const dt = rawDt * currentSettings.gameSpeed;
 
       // Handle Gamepad
       pollGamepad();
@@ -331,9 +413,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           const player = playerRef.current;
 
           // Challenge: Constant gravity shift
-          if (challenge?.constantGravityShift && challenge.shiftInterval) {
+          if (currentChallenge?.constantGravityShift && currentChallenge.shiftInterval) {
             gravityShiftTimerRef.current += fixedDt;
-            if (gravityShiftTimerRef.current >= challenge.shiftInterval) {
+            if (gravityShiftTimerRef.current >= currentChallenge.shiftInterval) {
               gravityShiftTimerRef.current = 0;
               const dirs: Array<'DOWN' | 'LEFT' | 'UP' | 'RIGHT'> = ['DOWN', 'LEFT', 'UP', 'RIGHT'];
               const currentIdx = dirs.indexOf(engineRef.current.gravityDir);
@@ -343,8 +425,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           }
 
           // Challenge: Time limit
-          if (challenge?.timeLimitSeconds) {
-            if (timeSeconds > challenge.timeLimitSeconds && !player.isDead) {
+          if (currentChallenge?.timeLimitSeconds) {
+            if (timeSecondsRef.current > currentChallenge.timeLimitSeconds && !player.isDead) {
               player.isDead = true;
               handleSoundEvent('death');
             }
@@ -369,10 +451,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           // Handle Level Win
           if (player.reachedExit && !isCompleted && !winTimeoutRef.current) {
             // Trigger subtle level complete particle burst effect at the exit door location
-            rendererRef.current.triggerLevelCompleteBurst(activeLevel.exitDoor, settings);
+            rendererRef.current.triggerLevelCompleteBurst(activeLevel.exitDoor, currentSettings);
 
             const collectedShards = activeLevel.shards.filter(s => s.collected).length;
-            onLevelCompleted(timeSeconds, deaths, switches, collectedShards);
+            setTimeSeconds(timeSecondsRef.current);
+            onLevelCompletedRef.current(timeSecondsRef.current, deathsRef.current, switchesRef.current, collectedShards);
 
             // Allow the particle burst to blossom at the exit door before displaying completion modal
             winTimeoutRef.current = window.setTimeout(() => {
@@ -384,7 +467,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           accumulator -= fixedDt;
         }
 
-        setTimeSeconds(t => t + dt);
+        timeSecondsRef.current += dt;
+        if (currentTime - lastHudUpdate >= 100) {
+          lastHudUpdate = currentTime;
+          setTimeSeconds(timeSecondsRef.current);
+        }
       }
 
       // Render Frame
@@ -399,7 +486,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             activeLevel,
             playerRef.current,
             engineRef.current.gravityDir,
-            settings,
+            currentSettings,
             dt
           );
         }
@@ -420,14 +507,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     isPaused,
     isCompleted,
     activeLevel,
-    settings,
-    challenge,
-    deaths,
-    switches,
-    timeSeconds,
     resetLevel,
     handleSoundEvent,
-    onLevelCompleted,
     pollGamepad,
   ]);
 
