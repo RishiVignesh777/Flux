@@ -3,6 +3,7 @@ import { LevelData, PhysicsState, GameSettings, ChallengeModifier } from '../typ
 import { PhysicsEngine, PlayerEntity } from '../physics/engine';
 import { GameRenderer } from '../render/renderer';
 import { soundManager } from '../audio/soundManager';
+import { SaveSystem } from '../storage/saveSystem';
 import { HUD } from './HUD';
 import { LevelCompleteModal } from './LevelCompleteModal';
 import { PauseMenu } from './PauseMenu';
@@ -72,6 +73,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const [isPaused, setIsPaused] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+
+  // Best time for current level from localStorage (or prop)
+  const [levelBestTime, setLevelBestTime] = useState<number | undefined>(() => {
+    return bestTime ?? SaveSystem.getBestTime(levelData.id);
+  });
+
+  // Sync best time whenever level or prop changes
+  useEffect(() => {
+    const saved = SaveSystem.getBestTime(levelData.id);
+    setLevelBestTime(bestTime ?? saved);
+  }, [levelData.id, bestTime]);
 
   // Input states
   const inputRef = useRef<{
@@ -454,8 +466,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             rendererRef.current.triggerLevelCompleteBurst(activeLevel.exitDoor, currentSettings);
 
             const collectedShards = activeLevel.shards.filter(s => s.collected).length;
-            setTimeSeconds(timeSecondsRef.current);
-            onLevelCompletedRef.current(timeSecondsRef.current, deathsRef.current, switchesRef.current, collectedShards);
+            const completionTime = timeSecondsRef.current;
+            setTimeSeconds(completionTime);
+
+            // Immediately persist best time to localStorage
+            const prevBest = SaveSystem.getBestTime(activeLevel.id);
+            if (!prevBest || completionTime < prevBest) {
+              SaveSystem.saveBestTime(activeLevel.id, completionTime);
+              setLevelBestTime(completionTime);
+            }
+
+            onLevelCompletedRef.current(completionTime, deathsRef.current, switchesRef.current, collectedShards);
 
             // Allow the particle burst to blossom at the exit door before displaying completion modal
             winTimeoutRef.current = window.setTimeout(() => {
@@ -542,6 +563,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           level={activeLevel}
           player={hudState}
           timeSeconds={timeSeconds}
+          timeSecondsRef={timeSecondsRef}
+          bestTime={levelBestTime}
+          isPaused={isPaused}
+          isCompleted={isCompleted}
           deaths={deaths}
           switches={switches}
           onSwitchState={handleSwitchState}
@@ -591,12 +616,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         <LevelCompleteModal
           levelId={activeLevel.id}
           levelName={activeLevel.name}
-          timeSeconds={timeSeconds}
+          timeSeconds={timeSecondsRef.current || timeSeconds}
           deaths={deaths}
           switches={switches}
           shardsCollected={activeLevel.shards.filter(s => s.collected).length}
           totalShards={activeLevel.shards.length}
-          bestTime={bestTime}
+          bestTime={levelBestTime}
           isLastLevel={activeLevel.id >= 60}
           onNextLevel={onNextLevel}
           onReplay={() => resetLevel(false)}

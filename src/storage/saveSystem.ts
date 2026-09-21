@@ -106,7 +106,49 @@ export class SaveSystem {
     }
 
     this.saveGameData(data);
+    try {
+      localStorage.setItem(`flux_best_time_${levelId}`, bestTime.toString());
+    } catch {}
     return data;
+  }
+
+  public static getBestTime(levelId: number): number | undefined {
+    try {
+      const direct = localStorage.getItem(`flux_best_time_${levelId}`);
+      if (direct !== null) {
+        const parsed = parseFloat(direct);
+        if (!isNaN(parsed) && parsed > 0) return parsed;
+      }
+      const data = this.loadGameData();
+      if (data.levelStats?.[levelId]?.bestTime) {
+        return data.levelStats[levelId].bestTime;
+      }
+    } catch {
+      // Ignore
+    }
+    return undefined;
+  }
+
+  public static saveBestTime(levelId: number, timeSeconds: number): void {
+    try {
+      localStorage.setItem(`flux_best_time_${levelId}`, timeSeconds.toString());
+      const data = this.loadGameData();
+      if (!data.levelStats[levelId]) {
+        data.levelStats[levelId] = {
+          timeSeconds,
+          deaths: 0,
+          stateSwitches: 0,
+          shardsCollected: 0,
+          bestTime: timeSeconds,
+        };
+      } else {
+        const curBest = data.levelStats[levelId].bestTime;
+        data.levelStats[levelId].bestTime = curBest ? Math.min(curBest, timeSeconds) : timeSeconds;
+      }
+      this.saveGameData(data);
+    } catch (e) {
+      console.error('Failed to save best time to localStorage', e);
+    }
   }
 
   public static loadSettings(): GameSettings {

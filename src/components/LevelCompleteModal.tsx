@@ -1,5 +1,6 @@
 import React from 'react';
 import { Sparkles, ArrowRight, RotateCcw, Grid, Clock, Skull, Zap } from 'lucide-react';
+import { formatTimeMs } from '../utils/time';
 
 interface LevelCompleteModalProps {
   levelId: number;
@@ -65,7 +66,7 @@ export const LevelCompleteModal: React.FC<LevelCompleteModalProps> = ({
         <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-800 bg-slate-950/80 p-3 mb-6 text-left text-xs font-mono">
           <div className="flex items-center gap-2 text-slate-400 p-1.5 rounded bg-slate-900/40">
             <Clock className="w-4 h-4 text-sky-400" />
-            <span>TIME: <strong className="text-white">{timeSeconds.toFixed(2)}s</strong></span>
+            <span>TIME: <strong className="text-white tabular-nums">{formatTimeMs(timeSeconds)}</strong></span>
           </div>
           <div className="flex items-center gap-2 text-slate-400 p-1.5 rounded bg-slate-900/40">
             <Zap className="w-4 h-4 text-amber-400" />
@@ -77,7 +78,7 @@ export const LevelCompleteModal: React.FC<LevelCompleteModalProps> = ({
           </div>
           <div className="flex items-center gap-2 text-slate-400 p-1.5 rounded bg-slate-900/40">
             <Clock className="w-4 h-4 text-emerald-400" />
-            <span>BEST: <strong className="text-white">{bestTime ? `${bestTime.toFixed(2)}s` : `${timeSeconds.toFixed(2)}s`}</strong></span>
+            <span>BEST: <strong className="text-white tabular-nums">{formatTimeMs(bestTime ?? timeSeconds)}</strong></span>
           </div>
         </div>
 

@@ -13,11 +13,16 @@ import {
   Sparkles,
   ArrowUp
 } from 'lucide-react';
+import { HUDTimer } from './HUDTimer';
 
 interface HUDProps {
   level: LevelData;
   player: PlayerEntity;
   timeSeconds: number;
+  timeSecondsRef?: React.MutableRefObject<number>;
+  bestTime?: number;
+  isPaused?: boolean;
+  isCompleted?: boolean;
   deaths: number;
   switches: number;
   onSwitchState: (state: PhysicsState) => void;
@@ -104,6 +109,10 @@ export const HUD: React.FC<HUDProps> = ({
   level,
   player,
   timeSeconds,
+  timeSecondsRef,
+  bestTime,
+  isPaused,
+  isCompleted,
   switches,
   onSwitchState,
   onRestart,
@@ -148,7 +157,7 @@ export const HUD: React.FC<HUDProps> = ({
   return (
     <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 select-none">
       {/* Top Header Bar */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-2.5">
         {/* Left: Level info & objective */}
         <div className="pointer-events-auto flex flex-col gap-1 rounded-lg border border-slate-800 bg-slate-950/85 px-3 py-2 backdrop-blur-md shadow-lg">
           <div className="flex items-center gap-2">
@@ -160,13 +169,23 @@ export const HUD: React.FC<HUDProps> = ({
           </div>
           <p className="text-xs text-slate-400 max-w-sm line-clamp-1">{level.hint || level.description}</p>
           <div className="flex items-center gap-3 pt-0.5 text-[11px] font-mono text-slate-400">
-            <span>TIME: <span className="text-slate-200">{timeSeconds.toFixed(1)}s</span></span>
             <span>SWITCHES: <span className="text-slate-200">{switches}</span></span>
             <span className="flex items-center gap-1 text-sky-300">
               <Sparkles className="w-3 h-3" />
               {collectedCount}/{level.shards.length}
             </span>
           </div>
+        </div>
+
+        {/* Center: Real-Time HUD Speedrun Timer with Millisecond Precision & LocalStorage PB */}
+        <div className="flex items-center justify-center">
+          <HUDTimer
+            timeSecondsRef={timeSecondsRef}
+            timeSeconds={timeSeconds}
+            bestTime={bestTime}
+            isPaused={isPaused}
+            isCompleted={isCompleted}
+          />
         </div>
 
         {/* Right: Quick Controls & Active State Badge */}

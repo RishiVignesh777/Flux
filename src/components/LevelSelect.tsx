@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SavedGameData } from '../storage/saveSystem';
 import { ArrowLeft, Lock, CheckCircle2, Sparkles, Clock } from 'lucide-react';
+import { formatTimeMs } from '../utils/time';
 
 interface LevelSelectProps {
   saveData: SavedGameData;
@@ -141,7 +142,7 @@ export const LevelSelect: React.FC<LevelSelectProps> = ({
               {/* Best time badge */}
               <div className="flex items-center gap-1 text-[11px] font-mono text-slate-400">
                 <Clock className="w-3 h-3 text-slate-500" />
-                {stats?.bestTime ? `${stats.bestTime.toFixed(1)}s` : isCompleted ? 'DONE' : 'UNPLAYED'}
+                {stats?.bestTime ? formatTimeMs(stats.bestTime) : isCompleted ? 'DONE' : 'UNPLAYED'}
               </div>
             </button>
           );
