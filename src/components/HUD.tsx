@@ -11,7 +11,9 @@ import {
   Snowflake, 
   EyeOff, 
   Sparkles,
-  ArrowUp
+  ArrowUp,
+  Skull,
+  AlertTriangle
 } from 'lucide-react';
 import { HUDTimer } from './HUDTimer';
 
@@ -113,6 +115,7 @@ export const HUD: React.FC<HUDProps> = ({
   bestTime,
   isPaused,
   isCompleted,
+  deaths,
   switches,
   onSwitchState,
   onRestart,
@@ -126,6 +129,43 @@ export const HUD: React.FC<HUDProps> = ({
 }: HUDProps) => {
   const currentStateConfig = STATE_CONFIG[player.state] || STATE_CONFIG.NORMAL;
   const statesList: PhysicsState[] = ['HEAVY', 'LIGHT', 'MAGNETIC', 'ELASTIC', 'FROZEN', 'PHASE'];
+
+  // Difficulty feedback based on current session death count
+  const getDifficultyIndicator = (count: number) => {
+    if (count === 0) {
+      return {
+        label: 'PERFECT',
+        badgeClass: 'text-emerald-400 border-emerald-500/30 bg-emerald-950/60',
+        iconClass: 'text-emerald-400',
+      };
+    } else if (count <= 2) {
+      return {
+        label: 'NORMAL',
+        badgeClass: 'text-slate-300 border-slate-700 bg-slate-900/60',
+        iconClass: 'text-slate-400',
+      };
+    } else if (count <= 5) {
+      return {
+        label: 'TRICKY',
+        badgeClass: 'text-amber-300 border-amber-500/30 bg-amber-950/60',
+        iconClass: 'text-amber-400',
+      };
+    } else if (count <= 10) {
+      return {
+        label: 'HARD',
+        badgeClass: 'text-orange-400 border-orange-500/40 bg-orange-950/70',
+        iconClass: 'text-orange-400',
+      };
+    } else {
+      return {
+        label: 'PUNISHING',
+        badgeClass: 'text-rose-400 border-rose-500/40 bg-rose-950/80 animate-pulse',
+        iconClass: 'text-rose-400',
+      };
+    }
+  };
+
+  const difficulty = getDifficultyIndicator(deaths);
 
   const getGlyph = (st: PhysicsState, defaultKey: string) => {
     if (controllerType === 'XBOX') {
@@ -168,8 +208,30 @@ export const HUD: React.FC<HUDProps> = ({
             <span className="text-sm font-semibold text-slate-100">{level.name}</span>
           </div>
           <p className="text-xs text-slate-400 max-w-sm line-clamp-1">{level.hint || level.description}</p>
-          <div className="flex items-center gap-3 pt-0.5 text-[11px] font-mono text-slate-400">
+          <div className="flex items-center flex-wrap gap-2.5 pt-0.5 text-[11px] font-mono text-slate-400">
+            {/* Session Deaths & Difficulty Feedback */}
+            <div 
+              id="hud-session-deaths"
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border transition-colors ${
+                deaths > 0 ? 'bg-rose-950/40 border-rose-800/40 text-rose-300' : 'bg-slate-900/60 border-slate-800 text-slate-300'
+              }`}
+              title={`Deaths in current level session: ${deaths} (${difficulty.label})`}
+            >
+              <Skull className={`w-3.5 h-3.5 ${difficulty.iconClass} ${deaths > 5 ? 'animate-bounce' : ''}`} />
+              <span className="font-bold tabular-nums">
+                {deaths} {deaths === 1 ? 'DEATH' : 'DEATHS'}
+              </span>
+              <span className={`text-[9px] font-bold px-1 rounded border ml-0.5 ${difficulty.badgeClass}`}>
+                {difficulty.label}
+              </span>
+            </div>
+
+            <span className="text-slate-600">•</span>
+
             <span>SWITCHES: <span className="text-slate-200">{switches}</span></span>
+
+            <span className="text-slate-600">•</span>
+
             <span className="flex items-center gap-1 text-sky-300">
               <Sparkles className="w-3 h-3" />
               {collectedCount}/{level.shards.length}
